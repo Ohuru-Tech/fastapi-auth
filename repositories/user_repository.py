@@ -21,6 +21,7 @@ class UserRepository:
                     password=user.password,
                 )
             )
+            return await self.get_user_by_email(email=user.email)
 
     async def get_user_by_email(self, email: str) -> User | None:
         statement = select(User).where(User.email == email)

@@ -9,7 +9,7 @@ globs:
   - "**/controllers/**/*.py"
   - "**/services/**/*.py"
   - "**/models/**/*.py"
-alwaysApply: false
+alwaysApply: true
 ---
 
 # FastAPI Development Standards

@@ -9,7 +9,7 @@ globs:
   - "**/package.json"
   - "**/go.mod"
   - "**/*.go"
-alwaysApply: false
+alwaysApply: true
 ---
 
 # Backend Development Workflow
