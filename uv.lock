@@ -525,73 +525,6 @@ standard = [
 ]
 
 [[package]]
-name = "fastapi-auth"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "aiomysql" },
-    { name = "aiosmtplib" },
-    { name = "aiosqlite" },
-    { name = "alembic" },
-    { name = "asyncpg" },
-    { name = "bcrypt" },
-    { name = "click" },
-    { name = "cryptography" },
-    { name = "fastapi", extra = ["standard"] },
-    { name = "httpx" },
-    { name = "pydantic-extra-types" },
-    { name = "pydantic-settings" },
-    { name = "pyjwt" },
-    { name = "rich" },
-    { name = "sqlalchemy", extra = ["asyncio"] },
-    { name = "structlog" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "build" },
-    { name = "faker" },
-    { name = "isort" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-    { name = "pytest-mock" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "aiomysql", specifier = ">=0.3.2" },
-    { name = "aiosmtplib", specifier = ">=5.0.0" },
-    { name = "aiosqlite", specifier = ">=0.20.0" },
-    { name = "alembic", specifier = ">=1.17.2" },
-    { name = "asyncpg", specifier = ">=0.31.0" },
-    { name = "bcrypt", specifier = ">=5.0.0" },
-    { name = "click", specifier = ">=8.1.0" },
-    { name = "cryptography", specifier = ">=43.0.0" },
-    { name = "fastapi", extras = ["standard"], specifier = ">=0.128.0" },
-    { name = "httpx", specifier = ">=0.28.1" },
-    { name = "pydantic-extra-types", specifier = ">=2.11.0" },
-    { name = "pydantic-settings", specifier = ">=2.12.0" },
-    { name = "pyjwt", specifier = ">=2.10.1" },
-    { name = "rich", specifier = ">=13.0.0" },
-    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.45" },
-    { name = "structlog", specifier = ">=25.5.0" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "build", specifier = ">=1.0.0" },
-    { name = "faker", specifier = ">=24.0.0" },
-    { name = "isort", specifier = ">=7.0.0" },
-    { name = "pytest", specifier = ">=8.0.0" },
-    { name = "pytest-asyncio", specifier = ">=0.23.0" },
-    { name = "pytest-cov", specifier = ">=5.0.0" },
-    { name = "pytest-mock", specifier = ">=3.14.0" },
-    { name = "ruff", specifier = ">=0.14.10" },
-]
-
-[[package]]
 name = "fastapi-cli"
 version = "0.0.20"
 source = { registry = "https://pypi.org/simple" }
@@ -989,6 +922,73 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d6/54/cfe61301667036ec958cb99bd3efefba235e65cdeb9c84d24a8293ba1d90/mdurl-0.1.2.tar.gz", hash = "sha256:bb413d29f5eea38f31dd4754dd7377d4465116fb207585f97bf925588687c1ba", size = 8729, upload-time = "2022-08-14T12:40:10.846Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b3/38/89ba8ad64ae25be8de66a6d463314cf1eb366222074cfda9ee839c56a4b4/mdurl-0.1.2-py3-none-any.whl", hash = "sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8", size = 9979, upload-time = "2022-08-14T12:40:09.779Z" },
+]
+
+[[package]]
+name = "oblox-fastapi-auth"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "aiomysql" },
+    { name = "aiosmtplib" },
+    { name = "aiosqlite" },
+    { name = "alembic" },
+    { name = "asyncpg" },
+    { name = "bcrypt" },
+    { name = "click" },
+    { name = "cryptography" },
+    { name = "fastapi", extra = ["standard"] },
+    { name = "httpx" },
+    { name = "pydantic-extra-types" },
+    { name = "pydantic-settings" },
+    { name = "pyjwt" },
+    { name = "rich" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "structlog" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "build" },
+    { name = "faker" },
+    { name = "isort" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "pytest-mock" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aiomysql", specifier = ">=0.3.2" },
+    { name = "aiosmtplib", specifier = ">=5.0.0" },
+    { name = "aiosqlite", specifier = ">=0.20.0" },
+    { name = "alembic", specifier = ">=1.17.2" },
+    { name = "asyncpg", specifier = ">=0.31.0" },
+    { name = "bcrypt", specifier = ">=5.0.0" },
+    { name = "click", specifier = ">=8.1.0" },
+    { name = "cryptography", specifier = ">=43.0.0" },
+    { name = "fastapi", extras = ["standard"], specifier = ">=0.128.0" },
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "pydantic-extra-types", specifier = ">=2.11.0" },
+    { name = "pydantic-settings", specifier = ">=2.12.0" },
+    { name = "pyjwt", specifier = ">=2.10.1" },
+    { name = "rich", specifier = ">=13.0.0" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.45" },
+    { name = "structlog", specifier = ">=25.5.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "build", specifier = ">=1.0.0" },
+    { name = "faker", specifier = ">=24.0.0" },
+    { name = "isort", specifier = ">=7.0.0" },
+    { name = "pytest", specifier = ">=8.0.0" },
+    { name = "pytest-asyncio", specifier = ">=0.23.0" },
+    { name = "pytest-cov", specifier = ">=5.0.0" },
+    { name = "pytest-mock", specifier = ">=3.14.0" },
+    { name = "ruff", specifier = ">=0.14.10" },
 ]
 
 [[package]]
