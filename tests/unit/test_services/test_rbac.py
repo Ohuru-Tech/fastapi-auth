@@ -1,11 +1,11 @@
 import datetime
 from datetime import timedelta
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from zoneinfo import ZoneInfo
 
 import jwt
 import pytest
-from fastapi import HTTPException, status
+from fastapi import HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials
 
 from fastapi_auth.models.rbac import Permission, Role
@@ -15,6 +15,9 @@ from fastapi_auth.services.rbac import (
     _has_permissions,
     _has_role,
     _is_admin,
+    check_admin_from_request,
+    check_permissions_from_request,
+    check_role_from_request,
     required_admin,
     required_permissions,
     required_role,
@@ -498,3 +501,574 @@ class TestRequiredPermissions:
             )
 
         assert exc_info.value.status_code == status.HTTP_403_FORBIDDEN
+
+
+class TestGetUserFromRequest:
+    """Test _get_user_from_request helper function."""
+
+    @pytest.mark.asyncio
+    async def test_get_user_from_request_with_valid_token(self, mock_settings):
+        """Test _get_user_from_request with valid token."""
+        user = User(id=1, email="test@example.com")
+
+        tz = ZoneInfo(mock_settings.timezone)
+        payload = {
+            "sub": user.email,
+            "exp": datetime.datetime.now(tz=tz) + timedelta(minutes=30),
+        }
+        token = jwt.encode(
+            payload, mock_settings.jwt_secret_key, algorithm=mock_settings.jwt_algorithm
+        )
+
+        request = MagicMock(spec=Request)
+        request.headers.get.return_value = f"Bearer {token}"
+
+        mock_session = AsyncMock()
+        mock_user_repo = AsyncMock()
+        mock_user_repo.get_user_by_email.return_value = user
+
+        # Create async context manager mock
+        async_context_manager = AsyncMock()
+        async_context_manager.__aenter__ = AsyncMock(return_value=mock_session)
+        async_context_manager.__aexit__ = AsyncMock(return_value=None)
+
+        with patch(
+            "fastapi_auth.services.rbac.get_settings", return_value=mock_settings
+        ):
+            with patch("fastapi_auth.services.rbac.DatabaseSession") as mock_db_session:
+                mock_db_session_instance = MagicMock()
+                mock_db_session_instance.SessionLocal = MagicMock(
+                    return_value=async_context_manager
+                )
+                mock_db_session.return_value = mock_db_session_instance
+
+                with patch(
+                    "fastapi_auth.services.rbac.UserRepository",
+                    return_value=mock_user_repo,
+                ):
+                    from fastapi_auth.services.rbac import _get_user_from_request
+
+                    result = await _get_user_from_request(request)
+
+                    assert result.email == user.email
+
+    @pytest.mark.asyncio
+    async def test_get_user_from_request_with_missing_header(self, mock_settings):
+        """Test _get_user_from_request with missing Authorization header."""
+        request = MagicMock(spec=Request)
+        request.headers.get.return_value = None
+
+        with patch(
+            "fastapi_auth.services.rbac.get_settings", return_value=mock_settings
+        ):
+            from fastapi_auth.services.rbac import _get_user_from_request
+
+            with pytest.raises(HTTPException) as exc_info:
+                await _get_user_from_request(request)
+
+            assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
+            assert "authorization" in exc_info.value.detail.lower()
+
+    @pytest.mark.asyncio
+    async def test_get_user_from_request_with_invalid_scheme(self, mock_settings):
+        """Test _get_user_from_request with invalid scheme."""
+        request = MagicMock(spec=Request)
+        request.headers.get.return_value = "Basic token123"
+
+        with patch(
+            "fastapi_auth.services.rbac.get_settings", return_value=mock_settings
+        ):
+            from fastapi_auth.services.rbac import _get_user_from_request
+
+            with pytest.raises(HTTPException) as exc_info:
+                await _get_user_from_request(request)
+
+            assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
+
+    @pytest.mark.asyncio
+    async def test_get_user_from_request_with_expired_token(self, mock_settings):
+        """Test _get_user_from_request with expired token."""
+        payload = {
+            "sub": "test@example.com",
+            "exp": datetime.datetime.now(tz=ZoneInfo(mock_settings.timezone))
+            - timedelta(hours=1),
+        }
+        token = jwt.encode(
+            payload, mock_settings.jwt_secret_key, algorithm=mock_settings.jwt_algorithm
+        )
+
+        request = MagicMock(spec=Request)
+        request.headers.get.return_value = f"Bearer {token}"
+
+        mock_session = AsyncMock()
+
+        # Create async context manager mock
+        async_context_manager = AsyncMock()
+        async_context_manager.__aenter__ = AsyncMock(return_value=mock_session)
+        async_context_manager.__aexit__ = AsyncMock(return_value=None)
+
+        with patch(
+            "fastapi_auth.services.rbac.get_settings", return_value=mock_settings
+        ):
+            with patch("fastapi_auth.services.rbac.DatabaseSession") as mock_db_session:
+                mock_db_session_instance = MagicMock()
+                mock_db_session_instance.SessionLocal = MagicMock(
+                    return_value=async_context_manager
+                )
+                mock_db_session.return_value = mock_db_session_instance
+
+                with patch("fastapi_auth.services.rbac.UserRepository"):
+                    from fastapi_auth.services.rbac import _get_user_from_request
+
+                    with pytest.raises(HTTPException) as exc_info:
+                        await _get_user_from_request(request)
+
+                    assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
+                    assert "expired" in exc_info.value.detail.lower()
+
+
+class TestCheckAdminFromRequest:
+    """Test check_admin_from_request function."""
+
+    @pytest.mark.asyncio
+    async def test_check_admin_from_request_with_admin_user(self, mock_settings):
+        """Test check_admin_from_request with admin user returns user."""
+        user = User(id=1, email="admin@example.com")
+        admin_role = Role(id=1, name="admin")
+
+        tz = ZoneInfo(mock_settings.timezone)
+        payload = {
+            "sub": user.email,
+            "exp": datetime.datetime.now(tz=tz) + timedelta(minutes=30),
+        }
+        token = jwt.encode(
+            payload, mock_settings.jwt_secret_key, algorithm=mock_settings.jwt_algorithm
+        )
+
+        request = MagicMock(spec=Request)
+        request.headers.get.return_value = f"Bearer {token}"
+
+        mock_session = AsyncMock()
+        mock_user_repo = AsyncMock()
+        mock_user_repo.get_user_by_email.return_value = user
+
+        mock_rbac_repo = AsyncMock()
+        mock_rbac_repo.get_roles_by_user_id.return_value = [admin_role]
+
+        # Create async context manager mock
+        async_context_manager = AsyncMock()
+        async_context_manager.__aenter__ = AsyncMock(return_value=mock_session)
+        async_context_manager.__aexit__ = AsyncMock(return_value=None)
+
+        with patch(
+            "fastapi_auth.services.rbac.get_settings", return_value=mock_settings
+        ):
+            with patch("fastapi_auth.services.rbac.DatabaseSession") as mock_db_session:
+                mock_db_session_instance = MagicMock()
+                mock_db_session_instance.SessionLocal = MagicMock(
+                    return_value=async_context_manager
+                )
+                mock_db_session.return_value = mock_db_session_instance
+
+                with patch(
+                    "fastapi_auth.services.rbac.UserRepository",
+                    return_value=mock_user_repo,
+                ):
+                    with patch(
+                        "fastapi_auth.services.rbac.RBACRepository",
+                        return_value=mock_rbac_repo,
+                    ):
+                        result = await check_admin_from_request(request)
+
+                        assert result.email == user.email
+
+    @pytest.mark.asyncio
+    async def test_check_admin_from_request_with_non_admin_user(self, mock_settings):
+        """Test check_admin_from_request with non-admin user raises HTTPException."""
+        user = User(id=1, email="user@example.com")
+        regular_role = Role(id=1, name="user")
+
+        tz = ZoneInfo(mock_settings.timezone)
+        payload = {
+            "sub": user.email,
+            "exp": datetime.datetime.now(tz=tz) + timedelta(minutes=30),
+        }
+        token = jwt.encode(
+            payload, mock_settings.jwt_secret_key, algorithm=mock_settings.jwt_algorithm
+        )
+
+        request = MagicMock(spec=Request)
+        request.headers.get.return_value = f"Bearer {token}"
+
+        mock_session = AsyncMock()
+        mock_user_repo = AsyncMock()
+        mock_user_repo.get_user_by_email.return_value = user
+
+        mock_rbac_repo = AsyncMock()
+        mock_rbac_repo.get_roles_by_user_id.return_value = [regular_role]
+
+        # Create async context manager mock
+        async_context_manager = AsyncMock()
+        async_context_manager.__aenter__ = AsyncMock(return_value=mock_session)
+        async_context_manager.__aexit__ = AsyncMock(return_value=None)
+
+        with patch(
+            "fastapi_auth.services.rbac.get_settings", return_value=mock_settings
+        ):
+            with patch("fastapi_auth.services.rbac.DatabaseSession") as mock_db_session:
+                mock_db_session_instance = MagicMock()
+                mock_db_session_instance.SessionLocal = MagicMock(
+                    return_value=async_context_manager
+                )
+                mock_db_session.return_value = mock_db_session_instance
+
+                with patch(
+                    "fastapi_auth.services.rbac.UserRepository",
+                    return_value=mock_user_repo,
+                ):
+                    with patch(
+                        "fastapi_auth.services.rbac.RBACRepository",
+                        return_value=mock_rbac_repo,
+                    ):
+                        with pytest.raises(HTTPException) as exc_info:
+                            await check_admin_from_request(request)
+
+                        assert exc_info.value.status_code == status.HTTP_403_FORBIDDEN
+                        assert "admin" in exc_info.value.detail.lower()
+
+
+class TestCheckRoleFromRequest:
+    """Test check_role_from_request function."""
+
+    @pytest.mark.asyncio
+    async def test_check_role_from_request_with_user_having_role(self, mock_settings):
+        """Test check_role_from_request with user having the role returns user."""
+        user = User(id=1, email="editor@example.com")
+        editor_role = Role(id=1, name="editor")
+
+        tz = ZoneInfo(mock_settings.timezone)
+        payload = {
+            "sub": user.email,
+            "exp": datetime.datetime.now(tz=tz) + timedelta(minutes=30),
+        }
+        token = jwt.encode(
+            payload, mock_settings.jwt_secret_key, algorithm=mock_settings.jwt_algorithm
+        )
+
+        request = MagicMock(spec=Request)
+        request.headers.get.return_value = f"Bearer {token}"
+
+        mock_session = AsyncMock()
+        mock_user_repo = AsyncMock()
+        mock_user_repo.get_user_by_email.return_value = user
+
+        mock_rbac_repo = AsyncMock()
+        mock_rbac_repo.get_roles_by_user_id.return_value = [editor_role]
+
+        # Create async context manager mock
+        async_context_manager = AsyncMock()
+        async_context_manager.__aenter__ = AsyncMock(return_value=mock_session)
+        async_context_manager.__aexit__ = AsyncMock(return_value=None)
+
+        with patch(
+            "fastapi_auth.services.rbac.get_settings", return_value=mock_settings
+        ):
+            with patch("fastapi_auth.services.rbac.DatabaseSession") as mock_db_session:
+                mock_db_session_instance = MagicMock()
+                mock_db_session_instance.SessionLocal = MagicMock(
+                    return_value=async_context_manager
+                )
+                mock_db_session.return_value = mock_db_session_instance
+
+                with patch(
+                    "fastapi_auth.services.rbac.UserRepository",
+                    return_value=mock_user_repo,
+                ):
+                    with patch(
+                        "fastapi_auth.services.rbac.RBACRepository",
+                        return_value=mock_rbac_repo,
+                    ):
+                        result = await check_role_from_request(request, "editor")
+
+                        assert result.email == user.email
+
+    @pytest.mark.asyncio
+    async def test_check_role_from_request_with_admin_bypass(self, mock_settings):
+        """Test check_role_from_request with admin user bypasses role check."""
+        user = User(id=1, email="admin@example.com")
+        admin_role = Role(id=1, name="admin")
+
+        tz = ZoneInfo(mock_settings.timezone)
+        payload = {
+            "sub": user.email,
+            "exp": datetime.datetime.now(tz=tz) + timedelta(minutes=30),
+        }
+        token = jwt.encode(
+            payload, mock_settings.jwt_secret_key, algorithm=mock_settings.jwt_algorithm
+        )
+
+        request = MagicMock(spec=Request)
+        request.headers.get.return_value = f"Bearer {token}"
+
+        mock_session = AsyncMock()
+        mock_user_repo = AsyncMock()
+        mock_user_repo.get_user_by_email.return_value = user
+
+        mock_rbac_repo = AsyncMock()
+        mock_rbac_repo.get_roles_by_user_id.return_value = [admin_role]
+
+        # Create async context manager mock
+        async_context_manager = AsyncMock()
+        async_context_manager.__aenter__ = AsyncMock(return_value=mock_session)
+        async_context_manager.__aexit__ = AsyncMock(return_value=None)
+
+        with patch(
+            "fastapi_auth.services.rbac.get_settings", return_value=mock_settings
+        ):
+            with patch("fastapi_auth.services.rbac.DatabaseSession") as mock_db_session:
+                mock_db_session_instance = MagicMock()
+                mock_db_session_instance.SessionLocal = MagicMock(
+                    return_value=async_context_manager
+                )
+                mock_db_session.return_value = mock_db_session_instance
+
+                with patch(
+                    "fastapi_auth.services.rbac.UserRepository",
+                    return_value=mock_user_repo,
+                ):
+                    with patch(
+                        "fastapi_auth.services.rbac.RBACRepository",
+                        return_value=mock_rbac_repo,
+                    ):
+                        result = await check_role_from_request(request, "editor")
+
+                        assert result.email == user.email
+
+    @pytest.mark.asyncio
+    async def test_check_role_from_request_with_user_missing_role(self, mock_settings):
+        """Test check_role_from_request with user missing role raises HTTPException."""
+        user = User(id=1, email="user@example.com")
+        viewer_role = Role(id=1, name="viewer")
+
+        tz = ZoneInfo(mock_settings.timezone)
+        payload = {
+            "sub": user.email,
+            "exp": datetime.datetime.now(tz=tz) + timedelta(minutes=30),
+        }
+        token = jwt.encode(
+            payload, mock_settings.jwt_secret_key, algorithm=mock_settings.jwt_algorithm
+        )
+
+        request = MagicMock(spec=Request)
+        request.headers.get.return_value = f"Bearer {token}"
+
+        mock_session = AsyncMock()
+        mock_user_repo = AsyncMock()
+        mock_user_repo.get_user_by_email.return_value = user
+
+        mock_rbac_repo = AsyncMock()
+        mock_rbac_repo.get_roles_by_user_id.return_value = [viewer_role]
+
+        # Create async context manager mock
+        async_context_manager = AsyncMock()
+        async_context_manager.__aenter__ = AsyncMock(return_value=mock_session)
+        async_context_manager.__aexit__ = AsyncMock(return_value=None)
+
+        with patch(
+            "fastapi_auth.services.rbac.get_settings", return_value=mock_settings
+        ):
+            with patch("fastapi_auth.services.rbac.DatabaseSession") as mock_db_session:
+                mock_db_session_instance = MagicMock()
+                mock_db_session_instance.SessionLocal = MagicMock(
+                    return_value=async_context_manager
+                )
+                mock_db_session.return_value = mock_db_session_instance
+
+                with patch(
+                    "fastapi_auth.services.rbac.UserRepository",
+                    return_value=mock_user_repo,
+                ):
+                    with patch(
+                        "fastapi_auth.services.rbac.RBACRepository",
+                        return_value=mock_rbac_repo,
+                    ):
+                        with pytest.raises(HTTPException) as exc_info:
+                            await check_role_from_request(request, "editor")
+
+                        assert exc_info.value.status_code == status.HTTP_403_FORBIDDEN
+
+
+class TestCheckPermissionsFromRequest:
+    """Test check_permissions_from_request function."""
+
+    @pytest.mark.asyncio
+    async def test_check_permissions_from_request_with_user_having_permissions(
+        self, mock_settings
+    ):
+        """Test check_permissions_from_request with user having permissions returns user."""
+        user = User(id=1, email="user@example.com")
+        perm1 = Permission(id=1, name="read:users", resource="users", action="read")
+        perm2 = Permission(id=2, name="write:users", resource="users", action="write")
+
+        tz = ZoneInfo(mock_settings.timezone)
+        payload = {
+            "sub": user.email,
+            "exp": datetime.datetime.now(tz=tz) + timedelta(minutes=30),
+        }
+        token = jwt.encode(
+            payload, mock_settings.jwt_secret_key, algorithm=mock_settings.jwt_algorithm
+        )
+
+        request = MagicMock(spec=Request)
+        request.headers.get.return_value = f"Bearer {token}"
+
+        mock_session = AsyncMock()
+        mock_user_repo = AsyncMock()
+        mock_user_repo.get_user_by_email.return_value = user
+
+        mock_rbac_repo = AsyncMock()
+        mock_rbac_repo.get_roles_by_user_id.return_value = []
+        mock_rbac_repo.get_permissions_by_user_id.return_value = [perm1, perm2]
+
+        # Create async context manager mock
+        async_context_manager = AsyncMock()
+        async_context_manager.__aenter__ = AsyncMock(return_value=mock_session)
+        async_context_manager.__aexit__ = AsyncMock(return_value=None)
+
+        with patch(
+            "fastapi_auth.services.rbac.get_settings", return_value=mock_settings
+        ):
+            with patch("fastapi_auth.services.rbac.DatabaseSession") as mock_db_session:
+                mock_db_session_instance = MagicMock()
+                mock_db_session_instance.SessionLocal = MagicMock(
+                    return_value=async_context_manager
+                )
+                mock_db_session.return_value = mock_db_session_instance
+
+                with patch(
+                    "fastapi_auth.services.rbac.UserRepository",
+                    return_value=mock_user_repo,
+                ):
+                    with patch(
+                        "fastapi_auth.services.rbac.RBACRepository",
+                        return_value=mock_rbac_repo,
+                    ):
+                        result = await check_permissions_from_request(
+                            request, ["read:users", "write:users"]
+                        )
+
+                        assert result.email == user.email
+
+    @pytest.mark.asyncio
+    async def test_check_permissions_from_request_with_admin_bypass(
+        self, mock_settings
+    ):
+        """Test check_permissions_from_request with admin user bypasses permission check."""
+        user = User(id=1, email="admin@example.com")
+        admin_role = Role(id=1, name="admin")
+
+        tz = ZoneInfo(mock_settings.timezone)
+        payload = {
+            "sub": user.email,
+            "exp": datetime.datetime.now(tz=tz) + timedelta(minutes=30),
+        }
+        token = jwt.encode(
+            payload, mock_settings.jwt_secret_key, algorithm=mock_settings.jwt_algorithm
+        )
+
+        request = MagicMock(spec=Request)
+        request.headers.get.return_value = f"Bearer {token}"
+
+        mock_session = AsyncMock()
+        mock_user_repo = AsyncMock()
+        mock_user_repo.get_user_by_email.return_value = user
+
+        mock_rbac_repo = AsyncMock()
+        mock_rbac_repo.get_roles_by_user_id.return_value = [admin_role]
+
+        # Create async context manager mock
+        async_context_manager = AsyncMock()
+        async_context_manager.__aenter__ = AsyncMock(return_value=mock_session)
+        async_context_manager.__aexit__ = AsyncMock(return_value=None)
+
+        with patch(
+            "fastapi_auth.services.rbac.get_settings", return_value=mock_settings
+        ):
+            with patch("fastapi_auth.services.rbac.DatabaseSession") as mock_db_session:
+                mock_db_session_instance = MagicMock()
+                mock_db_session_instance.SessionLocal = MagicMock(
+                    return_value=async_context_manager
+                )
+                mock_db_session.return_value = mock_db_session_instance
+
+                with patch(
+                    "fastapi_auth.services.rbac.UserRepository",
+                    return_value=mock_user_repo,
+                ):
+                    with patch(
+                        "fastapi_auth.services.rbac.RBACRepository",
+                        return_value=mock_rbac_repo,
+                    ):
+                        result = await check_permissions_from_request(
+                            request, ["read:users", "write:users"]
+                        )
+
+                        assert result.email == user.email
+
+    @pytest.mark.asyncio
+    async def test_check_permissions_from_request_with_missing_permission(
+        self, mock_settings
+    ):
+        """Test check_permissions_from_request with missing permission raises HTTPException."""
+        user = User(id=1, email="user@example.com")
+        perm1 = Permission(id=1, name="read:users", resource="users", action="read")
+
+        tz = ZoneInfo(mock_settings.timezone)
+        payload = {
+            "sub": user.email,
+            "exp": datetime.datetime.now(tz=tz) + timedelta(minutes=30),
+        }
+        token = jwt.encode(
+            payload, mock_settings.jwt_secret_key, algorithm=mock_settings.jwt_algorithm
+        )
+
+        request = MagicMock(spec=Request)
+        request.headers.get.return_value = f"Bearer {token}"
+
+        mock_session = AsyncMock()
+        mock_user_repo = AsyncMock()
+        mock_user_repo.get_user_by_email.return_value = user
+
+        mock_rbac_repo = AsyncMock()
+        mock_rbac_repo.get_roles_by_user_id.return_value = []
+        mock_rbac_repo.get_permissions_by_user_id.return_value = [perm1]
+
+        # Create async context manager mock
+        async_context_manager = AsyncMock()
+        async_context_manager.__aenter__ = AsyncMock(return_value=mock_session)
+        async_context_manager.__aexit__ = AsyncMock(return_value=None)
+
+        with patch(
+            "fastapi_auth.services.rbac.get_settings", return_value=mock_settings
+        ):
+            with patch("fastapi_auth.services.rbac.DatabaseSession") as mock_db_session:
+                mock_db_session_instance = MagicMock()
+                mock_db_session_instance.SessionLocal = MagicMock(
+                    return_value=async_context_manager
+                )
+                mock_db_session.return_value = mock_db_session_instance
+
+                with patch(
+                    "fastapi_auth.services.rbac.UserRepository",
+                    return_value=mock_user_repo,
+                ):
+                    with patch(
+                        "fastapi_auth.services.rbac.RBACRepository",
+                        return_value=mock_rbac_repo,
+                    ):
+                        with pytest.raises(HTTPException) as exc_info:
+                            await check_permissions_from_request(
+                                request, ["read:users", "write:users"]
+                            )
+
+                        assert exc_info.value.status_code == status.HTTP_403_FORBIDDEN

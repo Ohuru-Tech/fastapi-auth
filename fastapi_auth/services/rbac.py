@@ -1,7 +1,8 @@
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from fastapi_auth.database.db import DatabaseSession
 from fastapi_auth.models.user import User
 from fastapi_auth.repositories.rbac_repository import (
     RBACRepository,
@@ -171,3 +172,144 @@ def required_permissions(permission_names: list[str]):
         return user
 
     return _required_permissions
+
+
+async def _get_user_from_request(request: Request) -> User:
+    """Extract and validate user from JWT token in request Authorization header."""
+    # Extract Authorization header
+    auth_header = request.headers.get("authorization")
+    if not auth_header:
+        logger.warning("Authentication attempt without Authorization header")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authorization header",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Parse Bearer token
+    parts = auth_header.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        logger.warning("Authentication attempt with non-bearer scheme")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token = parts[1]
+
+    # Get settings and create database session
+    config = get_settings()
+    db_session = DatabaseSession(config)
+
+    async with db_session.SessionLocal() as session:
+        user_repo = UserRepository(database=session)
+
+        try:
+            jwt_secret = config.jwt_secret_key
+            algorithm = config.jwt_algorithm
+            payload = jwt.decode(token, jwt_secret, algorithms=[algorithm])
+
+            # Try to get user_id from payload, fallback to email
+            user_id = payload.get("id")
+            if user_id:
+                user = await user_repo.get_user_by_id(user_id)
+            else:
+                email = payload.get("sub")
+                if not email:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Invalid token payload",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+                user = await user_repo.get_user_by_email(email)
+
+            if not user:
+                logger.warning("User not found for token")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid authentication credentials",
+                )
+
+            return user
+        except jwt.ExpiredSignatureError:
+            logger.warning("Authentication failed: Token expired")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token expired",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        except jwt.InvalidTokenError:
+            logger.warning("Authentication failed: Invalid token")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+
+async def check_admin_from_request(request: Request) -> User:
+    """Check if user from request has admin role. Returns User or raises HTTPException."""
+    user = await _get_user_from_request(request)
+
+    db_session = DatabaseSession(get_settings())
+
+    async with db_session.SessionLocal() as session:
+        rbac_repo = RBACRepository(database=session)
+
+        if not await _is_admin(user, rbac_repo):
+            logger.warning(f"Admin check failed: User {user.email} is not an admin")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admin access required",
+            )
+        logger.debug(f"Admin user authenticated: {user.email}")
+        return user
+
+
+async def check_role_from_request(request: Request, role_name: str) -> User:
+    """Check if user from request has required role. Returns User or raises HTTPException."""
+    user = await _get_user_from_request(request)
+
+    db_session = DatabaseSession(get_settings())
+
+    async with db_session.SessionLocal() as session:
+        rbac_repo = RBACRepository(database=session)
+
+        if await _is_admin(user, rbac_repo):
+            logger.debug(f"Admin user bypassed role check: {user.email}")
+            return user
+
+        if not await _has_role(user, role_name, rbac_repo):
+            logger.warning(
+                f"Role check failed: User {user.email} does not have role {role_name}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Required role: {role_name}",
+            )
+        logger.debug(f"Role check passed: {user.email} has role {role_name}")
+        return user
+
+
+async def check_permissions_from_request(
+    request: Request, permission_names: list[str]
+) -> User:
+    """Check if user from request has required permissions. Returns User or raises HTTPException."""
+    user = await _get_user_from_request(request)
+
+    db_session = DatabaseSession(get_settings())
+
+    async with db_session.SessionLocal() as session:
+        rbac_repo = RBACRepository(database=session)
+
+        if not await _has_permissions(user, permission_names, rbac_repo):
+            logger.warning(
+                f"Permission check failed: User {user.email} does not have required permissions"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Required permissions: {', '.join(permission_names)}",
+            )
+        logger.debug(f"Permission check passed: {user.email} has required permissions")
+        return user
