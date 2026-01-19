@@ -164,7 +164,11 @@ class TestAuthSocialLoginEndpoint:
 
     @pytest.mark.asyncio
     async def test_social_login_github_success(self, test_engine, test_settings):
-        """Test successful GitHub social login."""
+        """
+        Verify the GitHub social login endpoint exchanges an authorization code and returns authentication tokens.
+        
+        Mocks GitHub token and user endpoints, overrides the database session and social provider repository to supply a GitHub provider, then POSTs a code to /auth/social/github/login and asserts the response contains `access_token` and `refresh_token` when the endpoint returns HTTP 200. Clears dependency overrides after the test.
+        """
         from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
         # Create a fresh session for this test

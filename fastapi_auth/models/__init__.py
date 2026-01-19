@@ -14,22 +14,10 @@ from fastapi_auth.models.user import User
 
 def get_metadata() -> MetaData:
     """
-    Get SQLAlchemy metadata for Alembic migrations.
-
-    Returns the metadata object containing all table definitions from this package.
-    This can be merged with your application's metadata for Alembic migrations.
-
+    Expose this package's SQLAlchemy MetaData for use in Alembic migrations.
+    
     Returns:
-        MetaData: SQLAlchemy metadata object containing all fastapi_auth tables
-
-    Example:
-        ```python
-        from fastapi_auth.models import get_metadata as get_auth_metadata
-        from myapp.models import Base as MyAppBase
-
-        # Merge metadata for Alembic
-        target_metadata = [MyAppBase.metadata, get_auth_metadata()]
-        ```
+        MetaData: SQLAlchemy MetaData containing all tables defined by this package (Base.metadata).
     """
     return Base.metadata
 
