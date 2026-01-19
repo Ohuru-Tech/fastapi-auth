@@ -36,6 +36,7 @@ class TestGetMetadata:
 
     def test_get_metadata_can_be_merged(self):
         """Test get_metadata can be merged with other metadata for Alembic."""
+
         # Create a test Base for another application
         class MyAppBase(DeclarativeBase):
             pass
