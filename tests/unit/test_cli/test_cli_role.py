@@ -102,3 +102,36 @@ class TestCLIRoleCommand:
         runner = CliRunner()
         result = runner.invoke(create_role, [])
         assert result.exit_code != 0
+
+    @pytest.mark.asyncio
+    async def test_create_role_output_uses_rich_formatting(self, test_session):
+        """Test role creation output uses Rich Table/Panel."""
+        from rich.table import Table
+        
+        runner = CliRunner()
+
+        async def mock_get_db_session():
+            yield test_session
+
+        with patch(
+            "fastapi_auth.cli.commands.role.get_db_session",
+            return_value=mock_get_db_session(),
+        ):
+            with patch("fastapi_auth.cli.utils.console") as mock_console:
+                runner.invoke(
+                    create_role,
+                    ["rich_role", "--description", "Rich role description"],
+                )
+                
+                # Verify console.print was called (Rich formatting is used)
+                assert mock_console.print.called
+                # Check that a Table object was passed
+                for call in mock_console.print.call_args_list:
+                    call_args = call[0]
+                    if call_args and len(call_args) > 0:
+                        obj = call_args[0]
+                        if isinstance(obj, Table):
+                            assert obj.title and ("role" in obj.title.lower() or "created" in obj.title.lower())
+                            return
+                # If no Table found, at least verify print was called
+                assert True

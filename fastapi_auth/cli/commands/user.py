@@ -1,7 +1,13 @@
 import click
 from sqlalchemy import select
 
-from fastapi_auth.cli.utils import get_db_session, print_error, print_success, run_async
+from fastapi_auth.cli.utils import (
+    get_db_session,
+    print_error,
+    print_success,
+    print_table,
+    run_async,
+)
 from fastapi_auth.models.user import User
 from fastapi_auth.schemas.user import UserSignupSchema
 from fastapi_auth.utils.password import hash_password
@@ -63,11 +69,29 @@ def create_user(
             await session.commit()
             await session.refresh(user)
 
-            print_success("User created successfully!")
-            print_success(f"  Email: {user.email}")
-            print_success(f"  Name: {user.name or 'N/A'}")
-            print_success(f"  ID: {user.id}")
-            print_success(f"  Is Staff: {user.is_staff}")
+            # Display user details in a formatted table
+            print_table(
+                title="User Created Successfully",
+                rows=[
+                    {
+                        "Field": "Email",
+                        "Value": user.email,
+                    },
+                    {
+                        "Field": "Name",
+                        "Value": user.name or "N/A",
+                    },
+                    {
+                        "Field": "ID",
+                        "Value": str(user.id),
+                    },
+                    {
+                        "Field": "Is Staff",
+                        "Value": str(user.is_staff),
+                    },
+                ],
+                column_names=["Field", "Value"],
+            )
 
     try:
         run_async(_create_user())

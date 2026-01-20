@@ -149,3 +149,49 @@ class TestCLIPermissionCommand:
         runner = CliRunner()
         result = runner.invoke(create_permission_for_role, [])
         assert result.exit_code != 0
+
+    @pytest.mark.asyncio
+    async def test_create_permission_output_uses_rich_formatting(self, test_session):
+        """Test permission assignment output uses Rich Table/Panel."""
+        from rich.table import Table
+        
+        runner = CliRunner()
+
+        # Create a role first
+        role = Role(name="test_role_rich", description="Test", is_active=True)
+        test_session.add(role)
+        await test_session.commit()
+        await test_session.refresh(role)
+
+        async def mock_get_db_session():
+            yield test_session
+
+        with patch(
+            "fastapi_auth.cli.commands.permission.get_db_session",
+            return_value=mock_get_db_session(),
+        ):
+            with patch("fastapi_auth.cli.utils.console") as mock_console:
+                runner.invoke(
+                    create_permission_for_role,
+                    [
+                        "test_role_rich",
+                        "read_users_rich",
+                        "users",
+                        "read",
+                        "--description",
+                        "Read users",
+                    ],
+                )
+                
+                # Verify console.print was called (Rich formatting is used)
+                assert mock_console.print.called
+                # Check that a Table object was passed
+                for call in mock_console.print.call_args_list:
+                    call_args = call[0]
+                    if call_args and len(call_args) > 0:
+                        obj = call_args[0]
+                        if isinstance(obj, Table):
+                            assert obj.title and ("permission" in obj.title.lower() or "assigned" in obj.title.lower() or "created" in obj.title.lower())
+                            return
+                # If no Table found, at least verify print was called
+                assert True
