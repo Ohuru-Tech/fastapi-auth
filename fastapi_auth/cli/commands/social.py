@@ -1,7 +1,12 @@
 import click
 from sqlalchemy import select
 
-from fastapi_auth.cli.utils import get_db_session, print_error, print_success, run_async
+from fastapi_auth.cli.utils import (
+    get_db_session,
+    print_error,
+    print_table,
+    run_async,
+)
 from fastapi_auth.models.social_providers import SocialProvider, SupportedProviders
 
 
@@ -60,10 +65,25 @@ def add_social_provider(
             await session.commit()
             await session.refresh(social_provider)
 
-            print_success(f"Social provider '{provider_type}' added successfully!")
-            print_success(f"  Provider Type: {social_provider.provider_type}")
-            print_success(f"  Client ID: {social_provider.client_id}")
-            print_success(f"  ID: {social_provider.id}")
+            # Display social provider details in a formatted table
+            print_table(
+                title="Social Provider Added Successfully",
+                rows=[
+                    {
+                        "Field": "Provider Type",
+                        "Value": social_provider.provider_type,
+                    },
+                    {
+                        "Field": "Client ID",
+                        "Value": social_provider.client_id,
+                    },
+                    {
+                        "Field": "ID",
+                        "Value": str(social_provider.id),
+                    },
+                ],
+                column_names=["Field", "Value"],
+            )
 
     try:
         run_async(_add_social_provider())

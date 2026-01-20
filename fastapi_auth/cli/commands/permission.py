@@ -1,7 +1,13 @@
 import click
 from sqlalchemy import select
 
-from fastapi_auth.cli.utils import get_db_session, print_error, print_success, run_async
+from fastapi_auth.cli.utils import (
+    get_db_session,
+    print_error,
+    print_success,
+    print_table,
+    run_async,
+)
 from fastapi_auth.models.rbac import Permission, Role, RolePermission
 
 
@@ -79,13 +85,29 @@ def create_permission_for_role(
             session.add(role_permission)
             await session.commit()
 
-            print_success(
-                f"Permission '{permission_name}' assigned to role '{role_name}'"
+            # Display permission assignment details in a formatted table
+            print_table(
+                title="Permission Assigned Successfully",
+                rows=[
+                    {
+                        "Field": "Permission",
+                        "Value": f"{permission.name} ({permission.resource}/{permission.action})",
+                    },
+                    {
+                        "Field": "Role",
+                        "Value": role.name,
+                    },
+                    {
+                        "Field": "Permission ID",
+                        "Value": str(permission.id),
+                    },
+                    {
+                        "Field": "Role ID",
+                        "Value": str(role.id),
+                    },
+                ],
+                column_names=["Field", "Value"],
             )
-            print_success(
-                f"  Permission: {permission.name} ({permission.resource}/{permission.action})"
-            )
-            print_success(f"  Role: {role.name}")
 
     try:
         run_async(_create_permission_for_role())

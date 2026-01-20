@@ -259,7 +259,9 @@ class TestCLIDirectAsyncFunctions:
         assert permission.resource != provided_resource  # Different resource
 
     @pytest.mark.asyncio
-    async def test_add_social_provider_internal_function(self, test_session):
+    async def test_add_social_provider_internal_function(
+        self, test_session, test_settings
+    ):
         """Test add_social_provider internal async function directly."""
         provider_type = "github"
         client_id = "test_client_id"

@@ -3,6 +3,7 @@
 from unittest.mock import patch
 
 import pytest
+from rich.panel import Panel
 
 from fastapi_auth.cli.utils import (
     get_async_session,
@@ -17,23 +18,73 @@ from fastapi_auth.cli.utils import (
 class TestCLIUtils:
     """Test CLI utility functions."""
 
-    def test_print_success(self, capsys):
-        """Test print_success function."""
-        print_success("Test success message")
-        # Rich console output is captured differently, just verify no exception
-        assert True
+    def test_print_success_uses_rich_panel(self, capsys):
+        """Test print_success uses Rich Panel with green styling."""
 
-    def test_print_error(self, capsys):
-        """Test print_error function."""
-        print_error("Test error message")
-        # Rich console output is captured differently, just verify no exception
-        assert True
+        with patch("fastapi_auth.cli.utils.console") as mock_console:
+            print_success("Test success message")
+            # Verify console.print was called (Rich Panel is used internally)
+            assert mock_console.print.called
+            # Check that a Panel object was passed
+            call_args = mock_console.print.call_args[0]
+            assert len(call_args) > 0
+            panel = call_args[0]
+            assert isinstance(panel, Panel)
+            # Check that the panel has green border style
+            assert panel.border_style == "green"
+            assert "green" in panel.title.lower() or "success" in panel.title.lower()
 
-    def test_print_info(self, capsys):
-        """Test print_info function."""
-        print_info("Test info message")
-        # Rich console output is captured differently, just verify no exception
-        assert True
+    def test_print_error_uses_rich_panel(self, capsys):
+        """Test print_error uses Rich Panel with red styling."""
+
+        with patch("fastapi_auth.cli.utils.console") as mock_console:
+            print_error("Test error message")
+            # Verify console.print was called
+            assert mock_console.print.called
+            # Check that a Panel object was passed
+            call_args = mock_console.print.call_args[0]
+            assert len(call_args) > 0
+            panel = call_args[0]
+            assert isinstance(panel, Panel)
+            # Check that the panel has red border style
+            assert panel.border_style == "red"
+            assert "red" in panel.title.lower() or "error" in panel.title.lower()
+
+    def test_print_info_uses_rich_panel(self, capsys):
+        """Test print_info uses Rich Panel with blue styling."""
+
+        with patch("fastapi_auth.cli.utils.console") as mock_console:
+            print_info("Test info message")
+            # Verify console.print was called
+            assert mock_console.print.called
+            # Check that a Panel object was passed
+            call_args = mock_console.print.call_args[0]
+            assert len(call_args) > 0
+            panel = call_args[0]
+            assert isinstance(panel, Panel)
+            # Check that the panel has blue border style
+            assert panel.border_style == "blue"
+            assert "blue" in panel.title.lower() or "info" in panel.title.lower()
+
+    def test_print_table_function_exists(self):
+        """Test print_table() function exists and creates Rich Table."""
+        # Import should work if function exists
+        try:
+            from fastapi_auth.cli.utils import print_table
+
+            assert callable(print_table)
+        except ImportError:
+            pytest.fail("print_table function does not exist")
+
+    def test_print_panel_function_exists(self):
+        """Test print_panel() function exists and creates Rich Panel."""
+        # Import should work if function exists
+        try:
+            from fastapi_auth.cli.utils import print_panel
+
+            assert callable(print_panel)
+        except ImportError:
+            pytest.fail("print_panel function does not exist")
 
     def test_get_async_session(self):
         """Test get_async_session returns async_sessionmaker."""

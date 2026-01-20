@@ -1,7 +1,12 @@
 import click
 from sqlalchemy import select
 
-from fastapi_auth.cli.utils import get_db_session, print_error, print_success, run_async
+from fastapi_auth.cli.utils import (
+    get_db_session,
+    print_error,
+    print_table,
+    run_async,
+)
 from fastapi_auth.models.rbac import Role
 
 
@@ -34,11 +39,29 @@ def create_role(name: str, description: str | None, is_active: bool) -> None:
             await session.commit()
             await session.refresh(role)
 
-            print_success("Role created successfully!")
-            print_success(f"  Name: {role.name}")
-            print_success(f"  Description: {role.description or 'N/A'}")
-            print_success(f"  ID: {role.id}")
-            print_success(f"  Is Active: {role.is_active}")
+            # Display role details in a formatted table
+            print_table(
+                title="Role Created Successfully",
+                rows=[
+                    {
+                        "Field": "Name",
+                        "Value": role.name,
+                    },
+                    {
+                        "Field": "Description",
+                        "Value": role.description or "N/A",
+                    },
+                    {
+                        "Field": "ID",
+                        "Value": str(role.id),
+                    },
+                    {
+                        "Field": "Is Active",
+                        "Value": str(role.is_active),
+                    },
+                ],
+                column_names=["Field", "Value"],
+            )
 
     try:
         run_async(_create_role())
